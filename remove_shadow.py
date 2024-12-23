@@ -123,6 +123,13 @@ def train_step(model, images, latent_in, noises, binary_mask, optimizer, step, a
         print("--------------------------------------------------")
         print("--------------------------------------------------")
         
+        # Resize binary mask and images to match generator output
+        binary_mask = tf.image.resize(binary_mask, [512, 4])
+        images = tf.image.resize(images, [512, 4])
+
+        print(f"[DEBUG] Resized binary_mask shape: {binary_mask.shape}")
+        print(f"[DEBUG] Resized images shape: {images.shape}")
+        
         img_gen = model.g_ema(latent_in, style=style, training=True)
         
         # Apply shadow matrix
