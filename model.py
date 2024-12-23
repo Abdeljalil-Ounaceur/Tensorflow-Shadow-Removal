@@ -419,6 +419,16 @@ class Generator(keras.Model):
                 print(f"[ERROR] Input tensor shape: {x.shape}")
                 print(f"[ERROR] Exception: {str(e)}")
                 raise
+            
+        # Add final conv layer to convert to RGB (3 channels)
+        final_conv = tf.keras.layers.Conv2D(
+            filters=3,
+            kernel_size=1,
+            padding='same',
+            name='to_rgb'
+        )
+        x = final_conv(x)
+        print(f"[DEBUG] Final output shape: {x.shape}")  # Should be (1, 512, 4, 3)
 
         return x
 

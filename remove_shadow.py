@@ -112,8 +112,15 @@ def train_step(model, images, latent_in, noises, binary_mask, optimizer, step, a
         
         # Apply shadow matrix
         shadow_matrix = tf.sigmoid(model.shadow_matrix)
-        img_gen_shadow = (img_gen + 1) * tf.reshape(shadow_matrix, [1, 1, 1, 3]) - 1
         
+        # Verify shapes before multiplication
+        print(f"[DEBUG] img_gen shape: {img_gen.shape}")
+        print(f"[DEBUG] shadow_matrix shape: {shadow_matrix.shape}")
+        
+        # Reshape shadow matrix to match spatial dimensions
+        shadow_reshaped = tf.reshape(shadow_matrix, [1, 1, 1, 3])
+        img_gen_shadow = (img_gen + 1) * shadow_reshaped - 1 
+
         # Generate mask and combine images
         mask = model.mask_net(model.mask_noise)
         shadow_img = img_gen * mask + img_gen_shadow * (1 - mask)
