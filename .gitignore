@@ -4,5 +4,6 @@ checkpoint/
 imgs/
 lpips/
 models/
+results/
 op/
 utils/

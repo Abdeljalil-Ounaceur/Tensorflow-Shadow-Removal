@@ -73,25 +73,62 @@ def preprocess_image(img_path, size):
 class ShadowRemovalModel(tf.keras.Model):
     def __init__(self, args):
         super().__init__()
-        # Fixed output sizes for generator
+        # Fixed output sizes
         self.output_h = 512
         self.output_w = 4
         
+        # Model components
         self.g_ema = Generator(512, 512, 8)
         self.discriminator = Discriminator(args.size, channel_multiplier=2)
+        self.optimizer = tf.keras.optimizers.Adam(learning_rate=args.lr)
+        self.mask_net = self.build_mask_net()
+        
+        # Training parameters as tf constants
+        self.stage2 = tf.constant(args.stage2, dtype=tf.int32)
+        self.stage3 = tf.constant(args.stage3, dtype=tf.int32)
+        self.stage4 = tf.constant(args.stage4, dtype=tf.int32)
+        self.w_noise_reg = tf.constant(args.w_noise_reg, dtype=tf.float32)
+        self.w_mse = tf.constant(args.w_mse, dtype=tf.float32)
+        self.w_percep = tf.constant(args.w_percep, dtype=tf.float32)
+        
+        # Model weights
         self.shadow_matrix = self.add_weight(
             name="shadow_matrix",
             shape=(1, 1, 1, 3),
             initializer=tf.zeros_initializer(),
             trainable=True
         )
-        # Initialize mask noise with correct shape
         self.mask_noise = tf.Variable(
             tf.random.normal([1, self.output_h, self.output_w, 1]),
-            trainable=True,
-            name='mask_noise'
+            trainable=True
         )
-        self.mask_net = self.build_mask_net()
+
+    def generate_style(self):
+        style = tf.random.normal([1, 512], dtype=tf.float32)
+        style = tf.expand_dims(style, 1)
+        return tf.broadcast_to(style, [1, 14, 512])
+
+    def apply_shadow(self, img_gen):
+        shadow_matrix = tf.sigmoid(self.shadow_matrix)
+        shadow_reshaped = tf.reshape(shadow_matrix, [1, 1, 1, 3])
+        img_gen_shadow = (img_gen + 1) * shadow_reshaped - 1
+        mask = self.mask_net(self.mask_noise)
+        shadow_img = img_gen * mask + img_gen_shadow * (1 - mask)
+        return shadow_img, mask
+    
+    def compute_loss(self, shadow_img, images, step):
+        return tf.switch_case(
+            tf.cast(
+                tf.cast(step >= self.stage3, tf.int32) * 2 + 
+                tf.cast(self.stage2 <= step < self.stage3, tf.int32), 
+                tf.int32
+            ),
+            branch_fns={
+                0: lambda: tf.reduce_mean(tf.abs(shadow_img - images)),
+                1: lambda: tf.reduce_mean(tf.square(shadow_img - images)), 
+                2: lambda: tf.reduce_mean(tf.abs(shadow_img - images))
+            }
+        )
     
     def build_mask_net(self):
         return tf.keras.Sequential([
@@ -103,74 +140,69 @@ class ShadowRemovalModel(tf.keras.Model):
             # Final conv to generate mask
             tf.keras.layers.Conv2D(1, 1, padding='same', activation='sigmoid')
         ])
-
-@tf.function
-def train_step(model, images, latent_in, noises, binary_mask, optimizer, step, args_dict):
-    with tf.GradientTape() as tape:
-        # Generate style inputs
-        style = tf.random.normal([1, 512])
-        style = tf.expand_dims(style, 1)
-        style = tf.broadcast_to(style, [1, 14, 512])
-        
-        # Generate base image - output shape will be [1, 512, 4, 3]
-        img_gen = model.g_ema(latent_in, style=style, training=True)
-        
-        # Generate shadow version
-        shadow_matrix = tf.sigmoid(model.shadow_matrix)
-        shadow_reshaped = tf.reshape(shadow_matrix, [1, 1, 1, 3])
-        img_gen_shadow = (img_gen + 1) * shadow_reshaped - 1
-        
-        # Pass mask noise directly to mask_net - no resizing needed
-        # Output will match img_gen shape
-        mask = model.mask_net(model.mask_noise)
-        
-        # Apply mask - shapes will match now
-        shadow_img = img_gen * mask + img_gen_shadow * (1 - mask)
-        
-        # Calculate loss
-        if step < args_dict['stage2']:
-            loss = tf.reduce_mean(tf.abs(shadow_img - images))
-        elif step < args_dict['stage3']:
-            loss = tf.reduce_mean(tf.square(shadow_img - images))
-        else:
-            loss = tf.reduce_mean(tf.abs(shadow_img - images))
+    @tf.function(
+        input_signature=[
+            tf.TensorSpec(shape=(1, 512, 4, 3), dtype=tf.float32, name='images'),
+            tf.TensorSpec(shape=(1, 14, 512), dtype=tf.float32, name='latent_in'),
+            tf.TensorSpec(shape=(1, 512, 4, 1), dtype=tf.float32, name='noises'),
+            tf.TensorSpec(shape=(1, 512, 4, 3), dtype=tf.float32, name='binary_mask'),
+            tf.TensorSpec(shape=(), dtype=tf.int32, name='step')
+        ]
+    )
+    def train_step(self, images, latent_in, noises, binary_mask, step):
+        with tf.GradientTape() as tape:
+            style = tf.random.normal([1, 512], dtype=tf.float32)
+            style = tf.expand_dims(style, 1)
+            style = tf.broadcast_to(style, [1, 14, 512])
             
-    gradients = tape.gradient(loss, model.trainable_variables)
-    optimizer.apply_gradients(zip(gradients, model.trainable_variables))
+            img_gen = self.g_ema([latent_in, style], training=True)
+            shadow_img, mask = self.apply_shadow(img_gen)
+            loss = self.compute_loss(shadow_img, images, step)
+                
+        gradients = tape.gradient(loss, self.trainable_variables)
+        self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
+        
+        return loss, img_gen, shadow_img, mask
     
-    return loss, img_gen, shadow_img, mask
+
 
 def main(img_path, res_dir, args):
-    # Preprocess image to fixed size
+    # Fixed sizes
+    target_size = [512, 4]
+    
+    # Preprocess with consistent shapes  
     img = preprocess_image(img_path, 512)
-    img = tf.expand_dims(img, 0)
-    img = tf.image.resize(img, [512, 4])
+    img = tf.cast(tf.expand_dims(img, 0), tf.float32)
+    img = tf.image.resize(img, target_size)
     
-    # Initialize model with fixed size
     model = ShadowRemovalModel(args)
-    optimizer = tf.keras.optimizers.Adam(learning_rate=args.lr)
     
-    # Initialize variables
-    latent_in = tf.Variable(tf.random.normal([1, 14, 512]))
-    noises = [tf.Variable(tf.random.normal([1, 512, 4, 1]))]
-    binary_mask = tf.ones_like(img)
+    latent_in = tf.Variable(
+        tf.random.normal([1, 14, 512], dtype=tf.float32),
+        trainable=True
+    )
     
-    args_dict = vars(args)
+    noises = tf.Variable(
+        tf.random.normal([1, 512, 4, 1], dtype=tf.float32),
+        trainable=True
+    )
+    
+    binary_mask = tf.ones_like(img, dtype=tf.float32)
     
     for step in tqdm(range(args.step)):
-        loss, img_gen, shadow_img, mask = train_step(
-            model, img, latent_in, noises, binary_mask, optimizer, step, args_dict)
+        step_tensor = tf.constant(step, dtype=tf.int32)
+        loss, img_gen, shadow_img, mask = model.train_step(
+            img, latent_in, noises, binary_mask, step_tensor)
         
         if step % 50 == 0:
             save_path = os.path.join(res_dir, f'step_{step}')
-            # Save images with proper shapes
-            tf.keras.utils.save_img(save_path + '_gen.png', 
+            tf.keras.utils.save_img(save_path + '_gen.png',
                                   tf.image.resize((img_gen[0] + 1) / 2, [256, 256]))
-            tf.keras.utils.save_img(save_path + '_shadow.png',
+            tf.keras.utils.save_img(save_path + '_shadow.png', 
                                   tf.image.resize((shadow_img[0] + 1) / 2, [256, 256]))
             tf.keras.utils.save_img(save_path + '_mask.png',
                                   tf.image.resize(mask[0], [256, 256]))
-
+            
 if __name__ == "__main__":
     parser = prepare_parser()
     parser = add_shadow_removal_parser(parser)
