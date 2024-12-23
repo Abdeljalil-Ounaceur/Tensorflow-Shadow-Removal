@@ -379,25 +379,40 @@ class Generator(keras.Model):
         x = self.input_tensor(latent_input)
         print(f"[DEBUG] After input tensor shape: {x.shape}")
         
-        # Store previous output for skip connections
-        skip_connection = None
+        # Store skip connections with channel matching
+        skip_connections = {}
+        skip_conv_layers = {}  # Add conv layers for channel matching
 
-        # Simplified layer processing with debug info
         for i, layer in enumerate(self.resnet_layers):
             print(f"[DEBUG] Processing layer {i}, type: {type(layer)}")
             print(f"[DEBUG] Input shape to layer {i}: {x.shape}")
             
             try:
                 if isinstance(layer, tf.keras.layers.Add):
-                    if skip_connection is None:
-                        skip_connection = x
-                        x = layer([x, x])  # Use same input twice for first add layer
+                    # Get corresponding skip connection
+                    skip_x = skip_connections.get(i, None)
+                    
+                    if skip_x is None:
+                        skip_connections[i] = x
+                        x = layer([x, x])
                     else:
-                        x = layer([x, skip_connection])
-                    skip_connection = x  # Update skip connection
+                        # Match channels if needed
+                        if skip_x.shape[-1] != x.shape[-1]:
+                            if i not in skip_conv_layers:
+                                skip_conv_layers[i] = tf.keras.layers.Conv2D(
+                                    x.shape[-1], 
+                                    kernel_size=1, 
+                                    padding='same'
+                                )
+                            skip_x = skip_conv_layers[i](skip_x)
+                        x = layer([x, skip_x])
+                    
+                    skip_connections[i] = x
                 else:
                     x = layer(x)
+                
                 print(f"[DEBUG] Layer {i} output shape: {x.shape}")
+                
             except Exception as e:
                 print(f"[ERROR] Failed at layer {i}")
                 print(f"[ERROR] Layer type: {type(layer)}")
