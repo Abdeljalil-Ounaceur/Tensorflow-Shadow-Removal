@@ -351,6 +351,14 @@ class Generator(keras.Model):
 
         self.n_latent = self.log_size * 2 - 2
 
+        # Add final conv layer for RGB output
+        self.to_rgb = tf.keras.layers.Conv2D(
+            filters=3,
+            kernel_size=1,
+            padding='same',
+            name='to_rgb'
+        )
+
     def build(self, input_shape):
         super().build(input_shape)
         # Any additional setup or layer shape definitions
@@ -420,16 +428,10 @@ class Generator(keras.Model):
                 print(f"[ERROR] Exception: {str(e)}")
                 raise
             
-        # Add final conv layer to convert to RGB (3 channels)
-        final_conv = tf.keras.layers.Conv2D(
-            filters=3,
-            kernel_size=1,
-            padding='same',
-            name='to_rgb'
-        )
-        x = final_conv(x)
-        print(f"[DEBUG] Final output shape: {x.shape}")  # Should be (1, 512, 4, 3)
-
+        # Use stored RGB conv layer
+        x = self.to_rgb(x)
+        print(f"[DEBUG] Final output shape: {x.shape}")
+    
         return x
 
 class Discriminator(keras.Model):
