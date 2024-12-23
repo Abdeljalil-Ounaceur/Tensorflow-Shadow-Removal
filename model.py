@@ -364,36 +364,36 @@ class Generator(keras.Model):
         # Any additional setup or layer shape definitions
 
     def call(self, inputs, style=None, noise=None):
-        print(f"[DEBUG] Call received inputs type: {type(inputs)}")
-        print(f"[DEBUG] Inputs value: {inputs}")
+        #print(f"[DEBUG] Call received inputs type: {type(inputs)}")
+        #print(f"[DEBUG] Inputs value: {inputs}")
         
         # If inputs is a list, unpack it
         if isinstance(inputs, list):
-            print(f"[DEBUG] Input is list with length: {len(inputs)}")
+            #print(f"[DEBUG] Input is list with length: {len(inputs)}")
             latent_input, style = inputs
-            print(f"[DEBUG] Unpacked latent_input shape: {latent_input.shape}")
-            print(f"[DEBUG] Unpacked style shape: {style.shape}")
+            #print(f"[DEBUG] Unpacked latent_input shape: {latent_input.shape}")
+            #print(f"[DEBUG] Unpacked style shape: {style.shape}")
         else:
-            print(f"[DEBUG] Input is not a list, shape: {inputs.shape}")
+            #print(f"[DEBUG] Input is not a list, shape: {inputs.shape}")
             latent_input = inputs
 
         # Normalize and process style
         if style is not None:
-            print(f"[DEBUG] Processing style input")
+            #print(f"[DEBUG] Processing style input")
             style = self.style(style)
-            print(f"[DEBUG] Processed style shape: {style.shape}")
+            #print(f"[DEBUG] Processed style shape: {style.shape}")
 
-        print(f"[DEBUG] Applying input tensor")
+        #print(f"[DEBUG] Applying input tensor")
         x = self.input_tensor(latent_input)
-        print(f"[DEBUG] After input tensor shape: {x.shape}")
+        #print(f"[DEBUG] After input tensor shape: {x.shape}")
         
         # Store skip connections with channel matching
         skip_connections = {}
         skip_conv_layers = {}  # Add conv layers for channel matching
 
         for i, layer in enumerate(self.resnet_layers):
-            print(f"[DEBUG] Processing layer {i}, type: {type(layer)}")
-            print(f"[DEBUG] Input shape to layer {i}: {x.shape}")
+            #print(f"[DEBUG] Processing layer {i}, type: {type(layer)}")
+            #print(f"[DEBUG] Input shape to layer {i}: {x.shape}")
             
             try:
                 if isinstance(layer, tf.keras.layers.Add):
@@ -419,18 +419,18 @@ class Generator(keras.Model):
                 else:
                     x = layer(x)
                 
-                print(f"[DEBUG] Layer {i} output shape: {x.shape}")
+                #print(f"[DEBUG] Layer {i} output shape: {x.shape}")
                 
             except Exception as e:
-                print(f"[ERROR] Failed at layer {i}")
-                print(f"[ERROR] Layer type: {type(layer)}")
-                print(f"[ERROR] Input tensor shape: {x.shape}")
-                print(f"[ERROR] Exception: {str(e)}")
+                #print(f"[ERROR] Failed at layer {i}")
+                #print(f"[ERROR] Layer type: {type(layer)}")
+                #print(f"[ERROR] Input tensor shape: {x.shape}")
+                #print(f"[ERROR] Exception: {str(e)}")
                 raise
             
         # Use stored RGB conv layer
         x = self.to_rgb(x)
-        print(f"[DEBUG] Final output shape: {x.shape}")
+        #print(f"[DEBUG] Final output shape: {x.shape}")
     
         return x
 
