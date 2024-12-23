@@ -1,0 +1,47 @@
+> created a custom run_windows.sh for my windows case.
+
+> executed run_windows.sh got errors of missing libraries.
+
+> asked copilot for libraries and gave me this:
+    torch==1.13.1
+    torchvision==0.14.1
+    numpy
+    Pillow
+    argparse
+
+> installed python 3.12
+> created a new virtual env py312shadow-rm
+
+> tried to install the libraries but they were installed to the global python312 installation instead of the venv
+> fixed that problem.
+
+> installed the necessary libraries (check requirements.txt)
+
+> executed the ./run_windows.sh and got this error:
+[ERROR 1]
+-----------------------------------------------------------------------------
+  File "C:\lab\shadow removal tensorflow\model.py", line 368, in call
+    x = layer(x)
+        ^^^^^^^^
+ValueError: in user code:
+
+    File "C:\lab\shadow removal tensorflow\remove_shadow.py", line 111, in train_step  *
+        img_gen = model.g_ema([latent_in, style], training=True)
+    File "C:\lab\venv\py312shadow-rm\Lib\site-packages\keras\src\utils\traceback_utils.py", line 122, in error_handler  **      
+        raise e.with_traceback(filtered_tb) from None
+    File "C:\lab\shadow removal tensorflow\model.py", line 368, in call
+        x = layer(x)
+
+    ValueError: Exception encountered when calling Generator.call().
+
+    A merge layer should be called on a list of inputs. Received: input_shape=(1, 512, 4, 512) (not a list of shapes)
+
+    Arguments received by Generator.call():
+      • inputs=['tf.Tensor(shape=(1, 14, 512), dtype=float32)', 'tf.Tensor(shape=(1, 14, 512), dtype=float32)']
+      • style=None
+      • noise=None
+------------------------------------------------------------------------------------
+
+> added a simple **build** method to the generator class to avoid warnings.
+
+> trying fixing ERROR 1 by debugging the lines of code...
