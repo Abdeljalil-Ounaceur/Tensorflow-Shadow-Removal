@@ -356,20 +356,54 @@ class Generator(keras.Model):
         # Any additional setup or layer shape definitions
 
     def call(self, inputs, style=None, noise=None):
+        print(f"[DEBUG] Call received inputs type: {type(inputs)}")
+        print(f"[DEBUG] Inputs value: {inputs}")
+        
         # If inputs is a list, unpack it
         if isinstance(inputs, list):
+            print(f"[DEBUG] Input is list with length: {len(inputs)}")
             latent_input, style = inputs
+            print(f"[DEBUG] Unpacked latent_input shape: {latent_input.shape}")
+            print(f"[DEBUG] Unpacked style shape: {style.shape}")
         else:
+            print(f"[DEBUG] Input is not a list, shape: {inputs.shape}")
             latent_input = inputs
 
         # Normalize and process style
-        style = self.style(style) if style is not None else None
+        if style is not None:
+            print(f"[DEBUG] Processing style input")
+            style = self.style(style)
+            print(f"[DEBUG] Processed style shape: {style.shape}")
 
+        print(f"[DEBUG] Applying input tensor")
         x = self.input_tensor(latent_input)
+        print(f"[DEBUG] After input tensor shape: {x.shape}")
+        
+        # Store previous output for skip connections
+        skip_connection = None
 
-        # Simplified layer processing
-        for layer in self.resnet_layers:
-            x = layer(x)
+        # Simplified layer processing with debug info
+        for i, layer in enumerate(self.resnet_layers):
+            print(f"[DEBUG] Processing layer {i}, type: {type(layer)}")
+            print(f"[DEBUG] Input shape to layer {i}: {x.shape}")
+            
+            try:
+                if isinstance(layer, tf.keras.layers.Add):
+                    if skip_connection is None:
+                        skip_connection = x
+                        x = layer([x, x])  # Use same input twice for first add layer
+                    else:
+                        x = layer([x, skip_connection])
+                    skip_connection = x  # Update skip connection
+                else:
+                    x = layer(x)
+                print(f"[DEBUG] Layer {i} output shape: {x.shape}")
+            except Exception as e:
+                print(f"[ERROR] Failed at layer {i}")
+                print(f"[ERROR] Layer type: {type(layer)}")
+                print(f"[ERROR] Input tensor shape: {x.shape}")
+                print(f"[ERROR] Exception: {str(e)}")
+                raise
 
         return x
 
