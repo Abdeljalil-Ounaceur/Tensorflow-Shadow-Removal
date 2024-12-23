@@ -88,6 +88,15 @@ class ShadowRemovalModel(tf.keras.Model):
             name='mask_noise'
         )
         self.mask_net = self.build_mask_net()
+    
+    def build_mask_net(self):
+        return tf.keras.Sequential([
+            tf.keras.layers.Conv2D(64, 3, padding='same'),
+            tf.keras.layers.LeakyReLU(0.2),
+            tf.keras.layers.Conv2D(128, 3, padding='same'),
+            tf.keras.layers.LeakyReLU(0.2),
+            tf.keras.layers.Conv2D(1, 3, padding='same', activation='sigmoid')
+        ])
         
     def build_mask_net(self):
         return tf.keras.Sequential([
@@ -127,10 +136,10 @@ def train_step(model, images, latent_in, noises, binary_mask, optimizer, step, a
         shadow_reshaped = tf.reshape(shadow_matrix, [1, 1, 1, 3])
         img_gen_shadow = (img_gen + 1) * shadow_reshaped - 1 
 
-        # Generate mask
-        print(f"[DEBUG] Mask noise shape: {model.mask_noise.shape}")
+        # Generate and resize mask to match img_gen dimensions
         mask = model.mask_net(model.mask_noise)
-        print(f"[DEBUG] Generated mask shape: {mask.shape}")
+        mask = tf.image.resize(mask, [img_gen.shape[1], img_gen.shape[2]])
+        print(f"[DEBUG] Resized mask shape: {mask.shape}")
         
         # Apply mask
         shadow_img = img_gen * mask + img_gen_shadow * (1 - mask)
