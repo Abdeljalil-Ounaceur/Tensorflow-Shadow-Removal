@@ -81,6 +81,12 @@ class ShadowRemovalModel(tf.keras.Model):
             initializer=tf.zeros_initializer(),
             trainable=True
         )
+        # Add mask noise initialization
+        self.mask_noise = tf.Variable(
+            tf.random.normal([1, args.size, args.size, 1]),
+            trainable=False,
+            name='mask_noise'
+        )
         self.mask_net = self.build_mask_net()
         
     def build_mask_net(self):
@@ -121,8 +127,12 @@ def train_step(model, images, latent_in, noises, binary_mask, optimizer, step, a
         shadow_reshaped = tf.reshape(shadow_matrix, [1, 1, 1, 3])
         img_gen_shadow = (img_gen + 1) * shadow_reshaped - 1 
 
-        # Generate mask and combine images
+        # Generate mask
+        print(f"[DEBUG] Mask noise shape: {model.mask_noise.shape}")
         mask = model.mask_net(model.mask_noise)
+        print(f"[DEBUG] Generated mask shape: {mask.shape}")
+        
+        # Apply mask
         shadow_img = img_gen * mask + img_gen_shadow * (1 - mask)
         
         # Calculate losses based on current stage
